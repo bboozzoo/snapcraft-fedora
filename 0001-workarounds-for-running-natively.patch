@@ -1,0 +1,260 @@
+From 4c52978993e118c22dad0e6a050e2988196f18e8 Mon Sep 17 00:00:00 2001
+Message-Id: <4c52978993e118c22dad0e6a050e2988196f18e8.1565100111.git.maciek.borzecki@gmail.com>
+In-Reply-To: <cover.1565100111.git.maciek.borzecki@gmail.com>
+References: <cover.1565100111.git.maciek.borzecki@gmail.com>
+From: Maciek Borzecki <maciek.borzecki@gmail.com>
+Date: Fri, 26 Jul 2019 13:32:03 +0200
+Subject: [PATCH 1/2] workarounds for running natively
+
+Signed-off-by: Maciek Borzecki <maciek.borzecki@gmail.com>
+---
+ MANIFEST.in                                   |  2 ++
+ requirements.txt                              |  2 +-
+ setup.py                                      |  4 ++-
+ .../internal/build_providers/_factory.py      |  7 +++--
+ snapcraft/internal/common.py                  |  9 +++---
+ snapcraft/internal/sources/_deb.py            |  6 ++--
+ tests/fixture_setup/__init__.py               | 11 +++----
+ tests/fixture_setup/_fixtures.py              | 10 +++++++
+ tests/unit/__init__.py                        | 29 ++++++++++---------
+ tests/unit/test_meta.py                       |  5 ++++
+ 10 files changed, 57 insertions(+), 28 deletions(-)
+
+diff --git a/MANIFEST.in b/MANIFEST.in
+index ab2b4cf2128f7e2d92888284705f2c93ac4a1ba6..f46c6916456c8eb51f5f447aad3019e5ee0a4e0e 100644
+--- a/MANIFEST.in
++++ b/MANIFEST.in
+@@ -1,3 +1,5 @@
+ include schema/*
+ include extensions/*
+ include debian/changelog
++include README.md
++include COPYING
+\ No newline at end of file
+diff --git a/requirements.txt b/requirements.txt
+index 473106d5b0acb158a5da51b7890014dcf5c0817e..b8167c914edcf664bb429345f152a2a13358bd4e 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,7 +1,7 @@
+ click~=6.0
+ configparser==3.5.0
+ jsonschema==2.5.1
+-progressbar33==2.4
++progressbar2==3.42.0
+ http://pyyaml.org/download/pyyaml/PyYAML-3.13-cp35-cp35m-win_amd64.whl; sys_platform == 'win32'
+ PyYAML==3.13; sys_platform != 'win32'
+ pyxdg==0.26
+diff --git a/setup.py b/setup.py
+index 8af56f4a3e504391cb8d9f8654ef688b3a6fa154..0051eacb86af414a89bb46a255515089a2295dd9 100755
+--- a/setup.py
++++ b/setup.py
+@@ -151,6 +151,8 @@ else:
+             + recursive_data_files("keyrings", "share/snapcraft")
+             + recursive_data_files("extensions", "share/snapcraft")
+         ),
+-        install_requires=["pysha3", "pyxdg", "requests"],
++        install_requires=["pyxdg", "requests", "requests-unixsocket", "click",
++                          "tabulate", "pymacaroons", "requests_toolbelt",
++                          "progressbar2", "jsonschema", "pyelftools"],
+         test_suite="tests.unit",
+     )
+diff --git a/snapcraft/internal/build_providers/_factory.py b/snapcraft/internal/build_providers/_factory.py
+index 576201f38cb64918708869a1abd7926ce3c4ecc6..4e2898be0fb8aa08738b434038c0330aede165be 100644
+--- a/snapcraft/internal/build_providers/_factory.py
++++ b/snapcraft/internal/build_providers/_factory.py
+@@ -17,7 +17,6 @@
+ from typing import TYPE_CHECKING
+ 
+ from . import errors
+-from ._lxd import LXD
+ from ._multipass import Multipass
+ 
+ if TYPE_CHECKING:
+@@ -31,6 +30,10 @@ def get_provider_for(provider_name: str) -> "Type[Provider]":
+     if provider_name == "multipass":
+         return Multipass
+     elif provider_name == "lxd":
+-        return LXD
++        try:
++            from ._lxd import LXD
++            return LXD
++        except ImportError:
++            raise errors.ProviderNotSupportedError(provider=provider_name)
+     else:
+         raise errors.ProviderNotSupportedError(provider=provider_name)
+diff --git a/snapcraft/internal/common.py b/snapcraft/internal/common.py
+index 5785291fe773b419c59a5c46d7a013450bfd091e..858402403a95dfe2083c9d3376ca59aec6518907 100644
+--- a/snapcraft/internal/common.py
++++ b/snapcraft/internal/common.py
+@@ -30,15 +30,16 @@ from typing import Callable, List
+ 
+ from snapcraft.internal import errors
+ 
++_DEFAULT_RESOURCES_PREFIX = os.getenv('SNAPCRAFT_RESOURCES_PREFIX') or sys.prefix
+ 
+ SNAPCRAFT_FILES = ["parts", "stage", "prime"]
+-_DEFAULT_PLUGINDIR = os.path.join(sys.prefix, "share", "snapcraft", "plugins")
++_DEFAULT_PLUGINDIR = os.path.join(_DEFAULT_RESOURCES_PREFIX, "share", "snapcraft", "plugins")
+ _plugindir = _DEFAULT_PLUGINDIR
+-_DEFAULT_SCHEMADIR = os.path.join(sys.prefix, "share", "snapcraft", "schema")
++_DEFAULT_SCHEMADIR = os.path.join(_DEFAULT_RESOURCES_PREFIX, "share", "snapcraft", "schema")
+ _schemadir = _DEFAULT_SCHEMADIR
+-_DEFAULT_EXTENSIONSDIR = os.path.join(sys.prefix, "share", "snapcraft", "extensions")
++_DEFAULT_EXTENSIONSDIR = os.path.join(_DEFAULT_RESOURCES_PREFIX, "share", "snapcraft", "extensions")
+ _extensionsdir = _DEFAULT_EXTENSIONSDIR
+-_DEFAULT_KEYRINGSDIR = os.path.join(sys.prefix, "share", "snapcraft", "keyrings")
++_DEFAULT_KEYRINGSDIR = os.path.join(_DEFAULT_RESOURCES_PREFIX, "share", "snapcraft", "keyrings")
+ _keyringsdir = _DEFAULT_KEYRINGSDIR
+ _DEFAULT_LEGACY_SNAPCRAFT_DIR = os.path.join(sys.prefix, "legacy_snapcraft")
+ _legacy_snapcraft_dir = _DEFAULT_LEGACY_SNAPCRAFT_DIR
+diff --git a/snapcraft/internal/sources/_deb.py b/snapcraft/internal/sources/_deb.py
+index b6d3b30070fc2f6f2a19d35f87742ed1242bd008..0165b2d7553e263f46cdc312d6b40b46ab07177f 100644
+--- a/snapcraft/internal/sources/_deb.py
++++ b/snapcraft/internal/sources/_deb.py
+@@ -18,8 +18,6 @@ import shutil
+ import tarfile
+ import tempfile
+ 
+-import debian.arfile
+-
+ from . import errors
+ from ._base import FileBase
+ 
+@@ -52,6 +50,10 @@ class Deb(FileBase):
+             raise errors.SnapcraftSourceInvalidOptionError("deb", "source-branch")
+ 
+     def provision(self, dst, clean_target=True, keep_deb=False, src=None):
++        try:
++            import debian.arfile
++        except ImportError:
++            raise RuntimeError('cannot provision deb without debian')
+         if src:
+             deb_file = src
+         else:
+diff --git a/tests/fixture_setup/__init__.py b/tests/fixture_setup/__init__.py
+index 0bb8ab8389f259ab174c3f50bfefa892d33784c1..c6a8852ff37b4ea692b22d95eec3ba2ffb349948 100644
+--- a/tests/fixture_setup/__init__.py
++++ b/tests/fixture_setup/__init__.py
+@@ -25,25 +25,26 @@ except ImportError as import_error:
+ from ._fixtures import (  # noqa: F401
+     BzrRepo,
+     CleanEnvironment,
+-    GitRepo,
+-    HgRepo,
+     FakeBaseEnvironment,
+     FakeParts,
+     FakePartsServerRunning,
+     FakePartsWiki,
+-    FakePartsWikiWithSlashes,
+-    FakePartsWikiWithSlashesRunning,
+     FakePartsWikiOrigin,
+     FakePartsWikiOriginRunning,
+     FakePartsWikiRunning,
++    FakePartsWikiWithSlashes,
++    FakePartsWikiWithSlashesRunning,
++    FakePlatformRepo,
++    FakeSSOServerRunning,
+     FakeServerRunning,
+     FakeSnapcraftIsASnap,
+-    FakeSSOServerRunning,
+     FakeStore,
+     FakeStoreAPIServerRunning,
+     FakeStoreSearchServerRunning,
+     FakeStoreUploadServerRunning,
+     FakeTerminal,
++    GitRepo,
++    HgRepo,
+     SharedCache,
+     SnapcraftYaml,
+     StagingStore,
+diff --git a/tests/fixture_setup/_fixtures.py b/tests/fixture_setup/_fixtures.py
+index f19ae0deb71a7fea11cc0b20121bc988351e3510..60a01c900325c446a54ee935b3d42011cc50849c 100644
+--- a/tests/fixture_setup/_fixtures.py
++++ b/tests/fixture_setup/_fixtures.py
+@@ -711,3 +711,13 @@ class FakeSnapcraftIsASnap(fixtures.Fixture):
+         self.useFixture(fixtures.EnvironmentVariable("SNAP", "/snap/snapcraft/current"))
+         self.useFixture(fixtures.EnvironmentVariable("SNAP_NAME", "snapcraft"))
+         self.useFixture(fixtures.EnvironmentVariable("SNAP_VERSION", "devel"))
++
++
++class FakePlatformRepo(fixtures.Fixture):
++    def _setUp(self):
++        super()._setUp()
++
++        patcher = mock.patch("snapcraft.internal.repo.Repo", autospec=True)
++        mock_repo = patcher.start()
++        mock_repo.get_installed_packages.return_value = ["foo", "bar"]
++        self.addCleanup(patcher.stop)
+diff --git a/tests/unit/__init__.py b/tests/unit/__init__.py
+index bc43df99585685d1a2605c7f6857a97746537990..9a7a05d872168542102ed450f7f43ba20dbae370 100644
+--- a/tests/unit/__init__.py
++++ b/tests/unit/__init__.py
+@@ -14,7 +14,6 @@
+ # You should have received a copy of the GNU General Public License
+ # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ 
+-import apt
+ import logging
+ import os
+ import stat
+@@ -142,18 +141,22 @@ class TestCase(testscenarios.WithScenarios, testtools.TestCase):
+         self.fake_logger = fixtures.FakeLogger(level=logging.ERROR)
+         self.useFixture(self.fake_logger)
+ 
+-        # Some tests will change the apt Dir::Etc::Trusted and
+-        # Dir::Etc::TrustedParts directories. Make sure they're properly reset.
+-        self.addCleanup(
+-            apt.apt_pkg.config.set,
+-            "Dir::Etc::Trusted",
+-            apt.apt_pkg.config.find_file("Dir::Etc::Trusted"),
+-        )
+-        self.addCleanup(
+-            apt.apt_pkg.config.set,
+-            "Dir::Etc::TrustedParts",
+-            apt.apt_pkg.config.find_file("Dir::Etc::TrustedParts"),
+-        )
++        try:
++            import apt
++            # Some tests will change the apt Dir::Etc::Trusted and
++            # Dir::Etc::TrustedParts directories. Make sure they're properly reset.
++            self.addCleanup(
++                apt.apt_pkg.config.set,
++                "Dir::Etc::Trusted",
++                apt.apt_pkg.config.find_file("Dir::Etc::Trusted"),
++            )
++            self.addCleanup(
++                apt.apt_pkg.config.set,
++                "Dir::Etc::TrustedParts",
++                apt.apt_pkg.config.find_file("Dir::Etc::TrustedParts"),
++            )
++        except ImportError:
++            pass
+ 
+         patcher = mock.patch("multiprocessing.cpu_count")
+         self.cpu_count = patcher.start()
+diff --git a/tests/unit/test_meta.py b/tests/unit/test_meta.py
+index a35e011989fc2ae51c4dd7fe269de3a3cf1f3d52..10f3f375aaabb2b5a6227ad75ee97a869e327c13 100644
+--- a/tests/unit/test_meta.py
++++ b/tests/unit/test_meta.py
+@@ -763,6 +763,8 @@ class CreateMetadataFromSourceBaseTestCase(CreateBaseTestCase):
+         }
+         # Create metadata file
+         open("test-metadata-file", "w").close()
++        # mock platform repo
++        self.useFixture(fixture_setup.FakePlatformRepo())
+ 
+ 
+ class CreateMetadataFromSourceTestCase(CreateMetadataFromSourceBaseTestCase):
+@@ -1996,6 +1998,9 @@ class CommonIdTestCase(CreateBaseTestCase):
+         self.create_metadata_file("part", "1.metainfo.xml", "test.id.1")
+         self.create_metadata_file("part", "2.metainfo.xml", "test.id.2")
+ 
++        # mock platform repo
++        self.useFixture(fixture_setup.FakePlatformRepo())
++
+     def create_metadata_file(self, part, name, common_id):
+         # Create metadata files
+         filename = os.path.join("parts", part, "src", name)
+-- 
+2.22.0
+

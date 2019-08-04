@@ -1,0 +1,55 @@
+From ea01b2f8082d5d5c2ded02ad7e99f90e2b479f6f Mon Sep 17 00:00:00 2001
+Message-Id: <ea01b2f8082d5d5c2ded02ad7e99f90e2b479f6f.1565100111.git.maciek.borzecki@gmail.com>
+In-Reply-To: <cover.1565100111.git.maciek.borzecki@gmail.com>
+References: <cover.1565100111.git.maciek.borzecki@gmail.com>
+From: Maciek Borzecki <maciek.borzecki@gmail.com>
+Date: Sun, 4 Aug 2019 17:22:06 +0200
+Subject: [PATCH 2/2] snapcraft/internal/deltas: compatibility with
+ progressbar2
+
+Fix compatibility with progressbar2
+
+Signed-off-by: Maciek Borzecki <maciek.borzecki@gmail.com>
+---
+ snapcraft/internal/deltas/_deltas.py | 2 +-
+ tests/unit/test_indicators.py        | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/snapcraft/internal/deltas/_deltas.py b/snapcraft/internal/deltas/_deltas.py
+index cb7acbbc87f0ca2e4ec35529b26b086fa15d64ec..0b131d8a33ee669ddd0bab3e846c688637893b37 100644
+--- a/snapcraft/internal/deltas/_deltas.py
++++ b/snapcraft/internal/deltas/_deltas.py
+@@ -154,7 +154,7 @@ class BaseDeltasGenerator:
+         count = 0
+         ret = proc.poll()
+         while ret is None:
+-            if count >= progress_indicator.maxval:
++            if count >= progress_indicator.max_value:
+                 progress_indicator.start()
+                 count = 0
+             progress_indicator.update(count)
+diff --git a/tests/unit/test_indicators.py b/tests/unit/test_indicators.py
+index 8af031107b70ed9882c6b080834a6409849b870e..461416e027f980dfbc448d3870d0583386b53e00 100644
+--- a/tests/unit/test_indicators.py
++++ b/tests/unit/test_indicators.py
+@@ -57,7 +57,7 @@ class ProgressBarInitializationTests(unit.TestCase):
+     def test_init_progress_bar_with_length(self, mock_is_dumb_terminal):
+         mock_is_dumb_terminal.return_value = self.dumb
+         pb = indicators._init_progress_bar(10, "destination", "message")
+-        self.assertThat(pb.maxval, Equals(10))
++        self.assertThat(pb.max_value, Equals(10))
+         self.assertTrue("message" in pb.widgets)
+         pb_widgets_types = [type(w) for w in pb.widgets]
+         self.assertTrue(type(progressbar.Percentage()) in pb_widgets_types)
+@@ -69,7 +69,7 @@ class ProgressBarInitializationTests(unit.TestCase):
+     def test_init_progress_bar_with_unknown_length(self, mock_is_dumb_terminal):
+         mock_is_dumb_terminal.return_value = self.dumb
+         pb = indicators._init_progress_bar(0, "destination", "message")
+-        self.assertThat(pb.maxval, Equals(progressbar.UnknownLength))
++        self.assertThat(pb.max_value, Equals(progressbar.UnknownLength))
+         self.assertTrue("message" in pb.widgets)
+         pb_widgets_types = [type(w) for w in pb.widgets]
+         self.assertThat(
+-- 
+2.22.0
+
